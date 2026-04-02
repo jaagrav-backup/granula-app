@@ -1,0 +1,44 @@
+{
+  "name": "electron-audio-capture",
+  "version": "1.0.0",
+  "description": "Prototype: desktop + mic audio capture via Chromium CoreAudio Tap",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac --dir",
+    "build:dmg": "electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^3.9.0"
+  },
+  "devDependencies": {
+    "electron": "^41.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "ai.getmili.audio-capture",
+    "productName": "AudioCapture",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "pcm-worklet.js"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.inherit.plist",
+      "target": [
+        { "target": "dir", "arch": ["arm64", "x64"] }
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "AudioCapture needs microphone access to record your voice during meetings.",
+        "NSScreenCaptureUsageDescription": "AudioCapture needs screen recording permission to capture system audio from your desktop.",
+        "NSAudioCaptureUsageDescription": "AudioCapture uses Apple's CoreAudio Tap API to capture system audio. This permission is required on macOS 14.2 and later."
+      }
+    }
+  }
+}

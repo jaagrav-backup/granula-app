@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+  <!-- ── Inherited by all Electron child processes ─────────────────────────── -->
+  <!-- (Renderer, GPU, Network Service, Utility — each is a separate process)  -->
+
+  <!-- V8 JIT in the renderer process -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- Chromium renderer needs unsigned executable memory -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- Renderer / GPU processes load libraries not signed by Apple -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- DYLD env vars used by Electron helper processes -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+
+  <!-- Microphone access must be inherited by the renderer, which is where
+       getUserMedia() actually runs -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
+  <!-- Camera must be inherited so getDisplayMedia video track is permitted -->
+  <key>com.apple.security.device.camera</key>
+  <true/>
+
+</dict>
+</plist>

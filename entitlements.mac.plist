@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+  <!-- ── Hardened Runtime: required for all Electron / Chromium apps ───────── -->
+
+  <!-- V8 JIT needs to write executable memory -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- Chromium's renderer needs unsigned executable memory -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- Electron loads native Node modules that aren't signed by Apple -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- Electron uses DYLD env vars internally for its helper processes -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+
+  <!-- ── Hardware access ────────────────────────────────────────────────────── -->
+
+  <!-- Microphone: required for getUserMedia({ audio: true }) -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
+  <!-- Camera: required when getDisplayMedia requests a video track.
+       Even though we only care about audio, Chromium opens a video track
+       during the display media session — without this the stream is denied. -->
+  <key>com.apple.security.device.camera</key>
+  <true/>
+
+</dict>
+</plist>
