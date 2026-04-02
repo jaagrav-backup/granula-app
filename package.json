@@ -4,26 +4,28 @@
   "description": "Prototype: desktop + mic audio capture via Chromium CoreAudio Tap",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --mac --dir",
-    "build:dmg": "electron-builder --mac dmg"
-  },
-  "dependencies": {
-    "@deepgram/sdk": "^3.9.0"
+    "dev": "vite",
+    "electron": "electron .",
+    "build:renderer": "vite build",
+    "build": "vite build && electron-builder --mac --dir",
+    "build:dmg": "vite build && electron-builder --mac dmg"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@vitejs/plugin-react": "^6.0.1",
     "electron": "^41.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.2.2",
+    "vite": "^8.0.3"
   },
   "build": {
     "appId": "ai.getmili.audio-capture",
     "productName": "AudioCapture",
     "files": [
       "main.js",
-      "preload.js",
-      "renderer.js",
-      "index.html",
-      "pcm-worklet.js"
+      "dist-renderer/**/*"
     ],
     "mac": {
       "category": "public.app-category.productivity",
@@ -32,7 +34,13 @@
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.inherit.plist",
       "target": [
-        { "target": "dir", "arch": ["arm64", "x64"] }
+        {
+          "target": "dir",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "AudioCapture needs microphone access to record your voice during meetings.",
