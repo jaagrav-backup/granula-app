@@ -26,6 +26,36 @@ export async function acquireStreams() {
 }
 
 /**
+ * Acquires a fresh microphone stream. Used when the mic device changes
+ * mid-recording so we can swap in a new stream without touching desktop audio.
+ * @returns {MediaStream}
+ */
+export async function acquireMicStream() {
+  return navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true },
+    video: false,
+  })
+}
+
+/**
+ * Attaches an `ended` listener to every audio track in the stream.
+ * Fires `onEnded` once (on the first track that ends).
+ * @param {MediaStream} stream
+ * @param {() => void} onEnded
+ */
+export function onTrackEnded(stream, onEnded) {
+  let fired = false
+  stream.getAudioTracks().forEach(track => {
+    track.addEventListener('ended', () => {
+      if (!fired) {
+        fired = true
+        onEnded()
+      }
+    })
+  })
+}
+
+/**
  * Wraps a MediaStream in a MediaRecorder that fires onChunk every 250ms.
  * Uses webm/opus natively — no AudioContext or PCM conversion needed.
  *

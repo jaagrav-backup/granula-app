@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { acquireStreams, createRecorder, stopCapture } from './audio/capture'
+import { acquireStreams, acquireMicStream, createRecorder, stopCapture, onTrackEnded } from './audio/capture'
 import { connect, disconnect, sendAudio } from './transcription/deepgram'
 import TranscriptPanel from './components/TranscriptPanel'
 
@@ -27,6 +27,8 @@ export default function App() {
   const desktopStreamRef = useRef(null)
   const micStreamRef = useRef(null)
   const timerRef = useRef(null)
+  const reconnectingMicRef = useRef(false)
+  const recordingRef = useRef(false)
 
   useEffect(() => {
     localStorage.setItem('dg_key', apiKey.trim())
@@ -41,6 +43,71 @@ export default function App() {
     clearInterval(timerRef.current)
     timerRef.current = null
   }, [])
+
+  /**
+   * Re-acquires the mic stream and hooks it up to the existing Deepgram
+   * WebSocket. Called when the mic device changes or the mic track ends.
+   */
+  const reconnectMic = useCallback(async () => {
+    if (reconnectingMicRef.current || !recordingRef.current) return
+    reconnectingMicRef.current = true
+
+    console.log('[app] mic changed — reconnecting…')
+
+    try {
+      // Tear down old mic recorder + stream (but keep the Deepgram socket alive)
+      stopCapture(micRecRef.current, micStreamRef.current)
+      micRecRef.current = null
+      micStreamRef.current = null
+
+      // Close the old Deepgram mic socket and open a fresh one so the new
+      // recorder's WebM header is the first thing Deepgram sees.
+      disconnect(dgMicRef.current)
+      dgMicRef.current = null
+
+      const key = apiKey.trim()
+      const newDgMic = await connect(key, (text, isFinal) => {
+        if (isFinal) {
+          setMicInterim('')
+          setMicFinal(prev => {
+            if (!text.trim()) return prev
+            return prev + (prev ? ' ' : '') + text.trim()
+          })
+        } else {
+          setMicInterim(text)
+        }
+      })
+      dgMicRef.current = newDgMic
+
+      // Grab the new mic stream
+      const newMicStream = await acquireMicStream()
+      micStreamRef.current = newMicStream
+
+      // Create a new recorder wired to the new Deepgram socket
+      micRecRef.current = createRecorder(
+        new MediaStream(newMicStream.getAudioTracks()),
+        buf => sendAudio(dgMicRef.current, buf),
+      )
+
+      // Watch the new stream's tracks for future disconnects
+      onTrackEnded(newMicStream, reconnectMic)
+
+      console.log('[app] mic reconnected successfully')
+    } catch (err) {
+      console.error('[app] mic reconnect failed:', err)
+    } finally {
+      reconnectingMicRef.current = false
+    }
+  }, [apiKey])
+
+  // Listen for OS-level audio device changes (e.g. Bluetooth headset connects)
+  useEffect(() => {
+    const handleDeviceChange = () => {
+      if (recordingRef.current) reconnectMic()
+    }
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange)
+    return () => navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange)
+  }, [reconnectMic])
 
   const startRecording = useCallback(async () => {
     const key = apiKey.trim()
@@ -101,7 +168,11 @@ export default function App() {
         buf => sendAudio(dgMic, buf),
       )
 
+      // Watch for mic track ending (device unplugged, Bluetooth disconnect, etc.)
+      onTrackEnded(micStream, reconnectMic)
+
       setRecording(true)
+      recordingRef.current = true
       startTimer()
     } catch (err) {
       console.error('[app] start failed:', err)
@@ -109,7 +180,7 @@ export default function App() {
       stopCapture(desktopRecRef.current, desktopStreamRef.current)
       stopCapture(micRecRef.current, micStreamRef.current)
     }
-  }, [apiKey, startTimer])
+  }, [apiKey, startTimer, reconnectMic])
 
   const stopRecording = useCallback(() => {
     stopTimer()
@@ -127,6 +198,7 @@ export default function App() {
     micRecRef.current = micStreamRef.current = null
 
     setRecording(false)
+    recordingRef.current = false
     setStatus({ text: 'Stopped', type: 'idle' })
   }, [stopTimer])
 
