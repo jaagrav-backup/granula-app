@@ -1,8 +1,22 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode: Tailwind v4 custom variant.
+   Toggle by adding/removing `.dark` on <html> (see lib/theme.jsx). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
+}
+
+/* Interactive children inside a drag region must opt out */
+button,
+a,
+input,
+textarea,
+select,
+[role='button'] {
+  -webkit-app-region: no-drag;
 }
 
 .no-drag {
@@ -14,11 +28,14 @@ body {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #333;
+  background: #d0d0d0;
   border-radius: 2px;
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #333;
 }
 
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #333 transparent;
 }

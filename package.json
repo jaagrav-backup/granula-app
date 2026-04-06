@@ -1,7 +1,7 @@
 {
-  "name": "electron-audio-capture",
-  "version": "1.0.0",
-  "description": "Prototype: desktop + mic audio capture via Chromium CoreAudio Tap",
+  "name": "granula-app",
+  "version": "1.0.1",
+  "description": "Granula — AI meeting notes for wealth advisors",
   "main": "main.js",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,16 @@
     "build:dmg": "vite build && electron-builder --mac dmg"
   },
   "dependencies": {
-    "notetaker-sdk": "file:../notetaker-sdk"
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "notetaker-sdk": "file:../notetaker-sdk",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.30.3",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
@@ -24,10 +33,11 @@
     "vite": "^8.0.3"
   },
   "build": {
-    "appId": "ai.getmili.audio-capture",
-    "productName": "AudioCapture",
+    "appId": "com.jaagrav.Granula",
+    "productName": "Granula",
     "files": [
       "main.js",
+      "preload.js",
       "dist-renderer/**/*"
     ],
     "mac": {
@@ -46,9 +56,9 @@
         }
       ],
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "AudioCapture needs microphone access to record your voice during meetings.",
-        "NSScreenCaptureUsageDescription": "AudioCapture needs screen recording permission to capture system audio from your desktop.",
-        "NSAudioCaptureUsageDescription": "AudioCapture uses Apple's CoreAudio Tap API to capture system audio. This permission is required on macOS 14.2 and later."
+        "NSMicrophoneUsageDescription": "Granula needs microphone access to record your voice during meetings.",
+        "NSScreenCaptureUsageDescription": "Granula needs screen recording permission to capture system audio from your desktop.",
+        "NSAudioCaptureUsageDescription": "Granula uses Apple's CoreAudio Tap API to capture system audio. This permission is required on macOS 14.2 and later."
       }
     }
   }
