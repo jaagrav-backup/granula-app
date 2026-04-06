@@ -68,6 +68,39 @@ Or edit `~/Documents/Granula/keys.json` directly.
 
 - **⌘⇧O** / **Ctrl+Shift+O** — Open the Granula folder in Finder/Explorer.
 
+## Auto updates
+
+Granula uses [`electron-updater`](https://www.electron.build/auto-update)
+with GitHub Releases as the update feed. On launch the app checks for a
+newer version, downloads it in the background, and shows a **Restart &
+install** prompt in the sidebar when it's ready.
+
+### Publishing a release
+
+1. Bump the version in `package.json` (e.g. `1.0.1` → `1.0.2`).
+2. Commit and push.
+3. Tag the commit and push the tag:
+
+   ```bash
+   git tag v1.0.2
+   git push origin v1.0.2
+   ```
+
+4. The `.github/workflows/release.yml` GitHub Action runs on `macos-latest`,
+   builds the app, and publishes the artifacts (`.dmg`, `.zip`, `latest-mac.yml`)
+   to a new GitHub Release using the default `GITHUB_TOKEN`.
+
+To publish manually from your machine instead:
+
+```bash
+export GH_TOKEN=<github-personal-access-token>
+npm run release
+```
+
+The updater reads the `publish` block in `package.json`, which points at
+`github.com/jaagrav-backup/granula-app`. Change the `owner`/`repo` fields if
+you fork.
+
 ## Tech stack
 
 Electron 41 · React 19 · Vite 8 · Tailwind CSS v4 · React Router ·

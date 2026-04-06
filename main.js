@@ -1,4 +1,6 @@
-const { app, BrowserWindow, Menu, session, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, Menu, session, ipcMain, shell, dialog } = require('electron')
+const { autoUpdater } = require('electron-updater')
+const log = require('electron-log')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
@@ -164,6 +166,45 @@ function startWatchers() {
   }
 }
 
+// --- Auto updates via electron-updater + GitHub Releases ---
+// Publishes and downloads from the `publish` block in package.json.
+// Flow: on app start we check for updates; if one is found it downloads in
+// the background and the renderer shows a prompt via the `updater:*` events.
+autoUpdater.logger = log
+log.transports.file.level = 'info'
+autoUpdater.autoDownload = true
+autoUpdater.autoInstallOnAppQuit = true
+
+function sendToAll(channel, payload) {
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send(channel, payload)
+  }
+}
+
+autoUpdater.on('checking-for-update', () => sendToAll('updater:checking'))
+autoUpdater.on('update-available', (info) =>
+  sendToAll('updater:available', { version: info.version, notes: info.releaseNotes }),
+)
+autoUpdater.on('update-not-available', () => sendToAll('updater:none'))
+autoUpdater.on('error', (err) =>
+  sendToAll('updater:error', { message: err?.message || String(err) }),
+)
+autoUpdater.on('download-progress', (p) =>
+  sendToAll('updater:progress', {
+    percent: p.percent,
+    transferred: p.transferred,
+    total: p.total,
+    bytesPerSecond: p.bytesPerSecond,
+  }),
+)
+autoUpdater.on('update-downloaded', (info) =>
+  sendToAll('updater:downloaded', { version: info.version }),
+)
+
+ipcMain.handle('updater:check', () => autoUpdater.checkForUpdates())
+ipcMain.handle('updater:install', () => autoUpdater.quitAndInstall())
+ipcMain.handle('updater:version', () => app.getVersion())
+
 app.on('will-quit', () => {
   try { meetingsWatcher?.close() } catch (_e) {}
   try { keysWatcher?.close() } catch (_e) {}
@@ -208,6 +249,11 @@ app.whenReady().then(() => {
     win.loadURL('http://localhost:5173')
   } else {
     win.loadFile(path.join(__dirname, 'dist-renderer', 'index.html'))
+    // Kick off an update check a couple seconds after launch so the UI has
+    // time to mount. Dev builds are skipped automatically by electron-updater.
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch((err) => log.warn('update check failed', err))
+    }, 3000)
   }
 })
 

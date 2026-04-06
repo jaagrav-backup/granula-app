@@ -18,4 +18,15 @@ contextBridge.exposeInMainWorld('granula', {
     ipcRenderer.on('granula:changed', listener)
     return () => ipcRenderer.removeListener('granula:changed', listener)
   },
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    version: () => ipcRenderer.invoke('updater:version'),
+    on: (event, callback) => {
+      const channel = `updater:${event}`
+      const listener = (_e, payload) => callback(payload)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+  },
 })

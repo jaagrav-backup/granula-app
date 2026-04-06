@@ -8,7 +8,9 @@
     "electron": "electron .",
     "build:renderer": "vite build",
     "build": "vite build && electron-builder --mac --dir",
-    "build:dmg": "vite build && electron-builder --mac dmg"
+    "build:dmg": "vite build && electron-builder --mac dmg",
+    "release": "vite build && electron-builder --mac --publish always",
+    "release:draft": "vite build && electron-builder --mac --publish onTagOrDraft"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
@@ -16,6 +18,8 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
     "notetaker-sdk": "file:../notetaker-sdk",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.30.3",
@@ -35,6 +39,14 @@
   "build": {
     "appId": "com.jaagrav.Granula",
     "productName": "Granula",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "jaagrav-backup",
+        "repo": "granula-app",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
@@ -48,7 +60,14 @@
       "entitlementsInherit": "entitlements.mac.inherit.plist",
       "target": [
         {
-          "target": "dir",
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "arm64",
             "x64"

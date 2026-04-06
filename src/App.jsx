@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { Microphone, ChatCircle, Gear } from "@phosphor-icons/react";
 import TitleBar from "./components/TitleBar";
 import RecordingIndicator from "./components/RecordingIndicator";
+import UpdateBanner from "./components/UpdateBanner";
 import { cn } from "./lib/utils";
 import pkg from "../package.json";
 
@@ -38,6 +39,7 @@ export default function AppShell() {
             ))}
           </nav>
           <RecordingIndicator />
+          <UpdateBanner />
           <div className="px-5 py-4 text-[10px] text-neutral-300 dark:text-[#3a3a3a]">
             v{pkg.version}
           </div>

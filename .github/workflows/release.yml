@@ -1,0 +1,36 @@
+name: Release
+
+# Triggers on pushing a version tag like v1.0.2, or manually from the Actions tab.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & publish to GitHub Releases
+        env:
+          # electron-builder reads this to authenticate with the GitHub API.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Skip native code signing in CI for now — set these secrets if you
+          # later add an Apple Developer cert.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run release
