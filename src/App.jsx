@@ -3,6 +3,7 @@ import { Microphone, ChatCircle, Gear } from "@phosphor-icons/react";
 import TitleBar from "./components/TitleBar";
 import RecordingIndicator from "./components/RecordingIndicator";
 import { cn } from "./lib/utils";
+import pkg from "../package.json";
 
 const NAV = [
   { to: "/meetings", label: "Meetings", Icon: Microphone },
@@ -38,7 +39,7 @@ export default function AppShell() {
           </nav>
           <RecordingIndicator />
           <div className="px-5 py-4 text-[10px] text-neutral-300 dark:text-[#3a3a3a]">
-            v0.1.0
+            v{pkg.version}
           </div>
         </aside>
         <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
