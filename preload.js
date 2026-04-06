@@ -12,4 +12,10 @@ contextBridge.exposeInMainWorld('granula', {
     get: () => ipcRenderer.invoke('keys:get'),
     set: (keys) => ipcRenderer.invoke('keys:set', keys),
   },
+  // Subscribe to file-watcher events. Returns an unsubscribe function.
+  onDataChanged: (callback) => {
+    const listener = (_e, payload) => callback(payload)
+    ipcRenderer.on('granula:changed', listener)
+    return () => ipcRenderer.removeListener('granula:changed', listener)
+  },
 })

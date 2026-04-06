@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Record, FolderOpen, Microphone, Trash } from "@phosphor-icons/react";
+import { Record, Microphone, Trash } from "@phosphor-icons/react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import {
@@ -8,7 +8,7 @@ import {
   saveMeeting,
   deleteMeeting,
   newMeeting,
-  openGranulaFolder,
+  onDataChanged,
 } from "../lib/store";
 
 function formatDate(ts) {
@@ -45,6 +45,14 @@ export default function Home() {
     refresh();
   }, [refresh]);
 
+  // Re-list whenever anything in the meetings folder changes on disk.
+  useEffect(() => {
+    const off = onDataChanged((evt) => {
+      if (evt.kind === "meetings") refresh();
+    });
+    return off;
+  }, [refresh]);
+
   const startInstant = useCallback(async () => {
     const m = newMeeting();
     m.title = `Instant meeting — ${new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
@@ -71,9 +79,6 @@ export default function Home() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={openGranulaFolder}>
-            <FolderOpen size={14} /> Open folder
-          </Button>
           <Button variant="destructive" size="sm" onClick={startInstant}>
             <Record size={14} weight="fill" /> Start Instant Meeting
           </Button>

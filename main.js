@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, safeStorage, shell } = require('electron')
+const { app, BrowserWindow, Menu, session, ipcMain, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
@@ -9,7 +9,11 @@ const isDev = !app.isPackaged
 // ~/Documents/Granula — user-visible meetings + transcripts
 const GRANULA_DIR = path.join(os.homedir(), 'Documents', 'Granula')
 const MEETINGS_DIR = path.join(GRANULA_DIR, 'meetings')
-const KEYS_FILE = path.join(GRANULA_DIR, 'keys.enc')
+// Plain JSON so the user can open/edit everything in one place. If a legacy
+// encrypted keys.enc exists from an older build we ignore it — user should
+// re-enter keys once.
+const KEYS_FILE = path.join(GRANULA_DIR, 'keys.json')
+const LEGACY_KEYS_FILE = path.join(GRANULA_DIR, 'keys.enc')
 
 function ensureDirs() {
   fs.mkdirSync(MEETINGS_DIR, { recursive: true })
@@ -52,15 +56,13 @@ function deleteMeeting(id) {
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
 }
 
-// --- Encrypted API key storage via Electron safeStorage ---
+// --- Plain-JSON API key storage ---
+// Stored alongside meetings so the user has a single human-readable folder
+// with all of their Granula data. Drop in a text editor, edit, save, done.
 function loadKeys() {
   try {
     if (!fs.existsSync(KEYS_FILE)) return { deepgram: '', gemini: '' }
-    const buf = fs.readFileSync(KEYS_FILE)
-    if (!safeStorage.isEncryptionAvailable()) {
-      return JSON.parse(buf.toString('utf8'))
-    }
-    return JSON.parse(safeStorage.decryptString(buf))
+    return JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8'))
   } catch (err) {
     console.error('loadKeys failed:', err)
     return { deepgram: '', gemini: '' }
@@ -69,16 +71,108 @@ function loadKeys() {
 
 function saveKeys(keys) {
   ensureDirs()
-  const json = JSON.stringify(keys)
-  if (!safeStorage.isEncryptionAvailable()) {
-    fs.writeFileSync(KEYS_FILE, json, 'utf8')
-    return
+  fs.writeFileSync(
+    KEYS_FILE,
+    JSON.stringify({ deepgram: '', gemini: '', ...keys }, null, 2),
+    'utf8',
+  )
+  // Clean up legacy encrypted file if present — we're the source of truth now.
+  if (fs.existsSync(LEGACY_KEYS_FILE)) {
+    try { fs.unlinkSync(LEGACY_KEYS_FILE) } catch (_e) {}
   }
-  fs.writeFileSync(KEYS_FILE, safeStorage.encryptString(json))
 }
+
+function buildAppMenu() {
+  const isMac = process.platform === 'darwin'
+  const openFolderItem = {
+    label: 'Open Granula Folder',
+    accelerator: 'CmdOrCtrl+Shift+O',
+    click: () => shell.openPath(GRANULA_DIR),
+  }
+  const template = [
+    ...(isMac
+      ? [{
+          label: app.name,
+          submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            openFolderItem,
+            { type: 'separator' },
+            { role: 'services' },
+            { type: 'separator' },
+            { role: 'hide' },
+            { role: 'hideOthers' },
+            { role: 'unhide' },
+            { type: 'separator' },
+            { role: 'quit' },
+          ],
+        }]
+      : []),
+    {
+      label: 'File',
+      submenu: [
+        openFolderItem,
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+// Debounced broadcast so one save doesn't fire ten events.
+const pendingBroadcasts = new Map() // kind -> timeout id
+function broadcast(kind, extra = {}) {
+  clearTimeout(pendingBroadcasts.get(kind))
+  pendingBroadcasts.set(
+    kind,
+    setTimeout(() => {
+      pendingBroadcasts.delete(kind)
+      for (const w of BrowserWindow.getAllWindows()) {
+        w.webContents.send('granula:changed', { kind, ...extra })
+      }
+    }, 120),
+  )
+}
+
+let meetingsWatcher = null
+let keysWatcher = null
+function startWatchers() {
+  ensureDirs()
+  try {
+    meetingsWatcher = fs.watch(MEETINGS_DIR, { recursive: true }, (_evt, filename) => {
+      if (!filename) return broadcast('meetings')
+      // Only care about meeting.json changes or directory add/remove.
+      if (filename.endsWith('meeting.json') || !filename.includes(path.sep + 'meeting.json') === false || !filename.includes('.')) {
+        // Extract id from first path segment
+        const id = filename.split(path.sep)[0]
+        broadcast('meetings', { id })
+      }
+    })
+  } catch (err) {
+    console.warn('meetings watcher failed:', err.message)
+  }
+  try {
+    keysWatcher = fs.watch(GRANULA_DIR, (_evt, filename) => {
+      if (filename === 'keys.json') broadcast('keys')
+    })
+  } catch (err) {
+    console.warn('keys watcher failed:', err.message)
+  }
+}
+
+app.on('will-quit', () => {
+  try { meetingsWatcher?.close() } catch (_e) {}
+  try { keysWatcher?.close() } catch (_e) {}
+})
 
 app.whenReady().then(() => {
   ensureDirs()
+  buildAppMenu()
+  startWatchers()
   NoteTaker.registerHandler(session.defaultSession)
 
   // IPC — meetings

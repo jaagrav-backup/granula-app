@@ -16,7 +16,7 @@ import {
 } from "../components/ui/tabs";
 import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
-import { getMeeting, saveMeeting } from "../lib/store";
+import { getMeeting, saveMeeting, onDataChanged } from "../lib/store";
 import { useRecording } from "../lib/recording";
 import Markdown from "../components/Markdown";
 
@@ -162,6 +162,19 @@ export default function Meeting() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMeetingId, refreshVersion]);
+
+  // Also refetch when the meeting.json file changes on disk — catches
+  // external edits the user makes in a text editor. Skipped while this
+  // recording is active so we don't clobber live in-memory messages.
+  useEffect(() => {
+    const off = onDataChanged((evt) => {
+      if (evt.kind !== "meetings") return;
+      if (isActive) return;
+      if (evt.id && evt.id !== id) return;
+      getMeeting(id).then((m) => { if (m) setMeeting(m); });
+    });
+    return off;
+  }, [id, isActive]);
 
   // Autoscroll transcript when the active recording pushes new messages
   useEffect(() => {
@@ -421,24 +434,40 @@ export default function Meeting() {
   );
 }
 
+function GeneratingBanner() {
+  return (
+    <p className="text-[11px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-2 flex items-center gap-2">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+      Generating notes…
+    </p>
+  );
+}
+
 function AiNotesView({ notes, generating, error, streaming }) {
   // While streaming, show the live tokens as markdown as they arrive.
   if (streaming) {
     return (
       <div>
-        <p className="text-[11px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-2">
-          Streaming from Gemini…
-        </p>
+        <GeneratingBanner />
         <Markdown>{streaming}</Markdown>
       </div>
     );
   }
-  if (generating && !notes)
+  // Generating but no stream yet — show banner above any existing notes.
+  if (generating) {
     return (
-      <p className="text-[12px] text-neutral-500 dark:text-[#666]">
-        Generating notes with Gemini…
-      </p>
+      <div>
+        <GeneratingBanner />
+        {notes ? (
+          <Markdown>{notes}</Markdown>
+        ) : (
+          <p className="text-[12px] text-neutral-500 dark:text-[#666]">
+            Waiting for Gemini…
+          </p>
+        )}
+      </div>
     );
+  }
   if (error) return <p className="text-[12px] text-red-400">{error}</p>;
   if (!notes) {
     return (

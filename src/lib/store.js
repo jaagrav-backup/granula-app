@@ -23,6 +23,16 @@ export async function setKeys(keys) {
   return await api()?.keys.set(keys)
 }
 
+/**
+ * Subscribe to file-watcher events from the main process. The callback
+ * receives `{ kind: 'meetings' | 'keys', id? }` whenever a file in the
+ * Granula folder changes on disk — whether that's us writing to it or the
+ * user editing the JSON manually. Returns an unsubscribe function.
+ */
+export function onDataChanged(callback) {
+  return api()?.onDataChanged?.(callback) ?? (() => {})
+}
+
 export function newMeeting() {
   const id = `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   return {
