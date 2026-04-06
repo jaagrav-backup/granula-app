@@ -1,226 +1,229 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
-import { acquireStreams, acquireMicStream, createRecorder, stopCapture, onTrackEnded } from './audio/capture'
-import { connect, disconnect, sendAudio } from './transcription/deepgram'
-import TranscriptPanel from './components/TranscriptPanel'
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import NoteTaker from "notetaker-sdk";
 
 function formatTime(seconds) {
-  const m = String(Math.floor(seconds / 60)).padStart(2, '0')
-  const s = String(seconds % 60).padStart(2, '0')
-  return `${m}:${s}`
+  const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const s = String(seconds % 60).padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+/**
+ * A single chat bubble. System audio is left-aligned (muted gray),
+ * microphone is right-aligned (accent red). Interim bubbles render
+ * slightly faded to signal they're still being transcribed.
+ */
+function Bubble({ source, text, isInterim }) {
+  const isMic = source === "microphone";
+  const align = isMic ? "justify-end" : "justify-start";
+  const colors = isMic
+    ? "bg-red-600/80 text-white"
+    : "bg-[#1f1f1f] text-[#e8e8e8] border border-[#2a2a2a]";
+  const corners = isMic
+    ? "rounded-2xl rounded-br-md"
+    : "rounded-2xl rounded-bl-md";
+
+  return (
+    <div className={`flex ${align}`}>
+      <div
+        className={`max-w-[75%] px-3.5 py-2 text-[13px] leading-snug break-words select-text ${colors} ${corners} ${
+          isInterim ? "opacity-50" : ""
+        }`}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+
+function SourceLabel({ source }) {
+  const isMic = source === "microphone";
+  return (
+    <div
+      className={`text-[10px] uppercase tracking-wider text-[#555] px-1 ${
+        isMic ? "text-right" : "text-left"
+      }`}
+    >
+      {isMic ? "You" : "System"}
+    </div>
+  );
 }
 
 export default function App() {
-  const [status, setStatus] = useState({ text: 'Ready', type: 'idle' })
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('dg_key') ?? '')
-  const [recording, setRecording] = useState(false)
-  const [seconds, setSeconds] = useState(0)
-
-  const [desktopFinal, setDesktopFinal] = useState('')
-  const [desktopInterim, setDesktopInterim] = useState('')
-  const [micFinal, setMicFinal] = useState('')
-  const [micInterim, setMicInterim] = useState('')
-
-  const dgDesktopRef = useRef(null)
-  const dgMicRef = useRef(null)
-  const desktopRecRef = useRef(null)
-  const micRecRef = useRef(null)
-  const desktopStreamRef = useRef(null)
-  const micStreamRef = useRef(null)
-  const timerRef = useRef(null)
-  const reconnectingMicRef = useRef(false)
-  const recordingRef = useRef(false)
-
-  useEffect(() => {
-    localStorage.setItem('dg_key', apiKey.trim())
-  }, [apiKey])
-
-  const startTimer = useCallback(() => {
-    setSeconds(0)
-    timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
-  }, [])
-
-  const stopTimer = useCallback(() => {
-    clearInterval(timerRef.current)
-    timerRef.current = null
-  }, [])
+  const [status, setStatus] = useState({ text: "Ready", type: "idle" });
+  const [apiKey, setApiKey] = useState(
+    () => localStorage.getItem("dg_key") ?? "",
+  );
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
 
   /**
-   * Re-acquires the mic stream and hooks it up to the existing Deepgram
-   * WebSocket. Called when the mic device changes or the mic track ends.
+   * Chronological list of finalized transcript bubbles.
+   * Each entry: { id, source: 'system'|'microphone', text }
    */
-  const reconnectMic = useCallback(async () => {
-    if (reconnectingMicRef.current || !recordingRef.current) return
-    reconnectingMicRef.current = true
+  const [messages, setMessages] = useState([]);
 
-    console.log('[app] mic changed — reconnecting…')
+  /**
+   * Current in-flight interim for each source. Rendered as a faded
+   * bubble trailing the message list. Replaced (not appended) on
+   * every interim update, and cleared when the matching final lands.
+   */
+  const [interim, setInterim] = useState({ system: "", microphone: "" });
 
-    try {
-      // Tear down old mic recorder + stream (but keep the Deepgram socket alive)
-      stopCapture(micRecRef.current, micStreamRef.current)
-      micRecRef.current = null
-      micStreamRef.current = null
+  const notetakerRef = useRef(null);
+  const timerRef = useRef(null);
+  const scrollRef = useRef(null);
+  const messageIdRef = useRef(0);
 
-      // Close the old Deepgram mic socket and open a fresh one so the new
-      // recorder's WebM header is the first thing Deepgram sees.
-      disconnect(dgMicRef.current)
-      dgMicRef.current = null
-
-      const key = apiKey.trim()
-      const newDgMic = await connect(key, (text, isFinal) => {
-        if (isFinal) {
-          setMicInterim('')
-          setMicFinal(prev => {
-            if (!text.trim()) return prev
-            return prev + (prev ? ' ' : '') + text.trim()
-          })
-        } else {
-          setMicInterim(text)
-        }
-      })
-      dgMicRef.current = newDgMic
-
-      // Grab the new mic stream
-      const newMicStream = await acquireMicStream()
-      micStreamRef.current = newMicStream
-
-      // Create a new recorder wired to the new Deepgram socket
-      micRecRef.current = createRecorder(
-        new MediaStream(newMicStream.getAudioTracks()),
-        buf => sendAudio(dgMicRef.current, buf),
-      )
-
-      // Watch the new stream's tracks for future disconnects
-      onTrackEnded(newMicStream, reconnectMic)
-
-      console.log('[app] mic reconnected successfully')
-    } catch (err) {
-      console.error('[app] mic reconnect failed:', err)
-    } finally {
-      reconnectingMicRef.current = false
-    }
-  }, [apiKey])
-
-  // Listen for OS-level audio device changes (e.g. Bluetooth headset connects)
   useEffect(() => {
-    const handleDeviceChange = () => {
-      if (recordingRef.current) reconnectMic()
+    localStorage.setItem("dg_key", apiKey.trim());
+  }, [apiKey]);
+
+  // Auto-scroll to the bottom whenever messages or interim text changes,
+  // so the latest chat bubble is always in view.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, interim]);
+
+  const startTimer = useCallback(() => {
+    setSeconds(0);
+    timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    clearInterval(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  const handleTranscript = useCallback(({ source, text, isFinal }) => {
+    if (isFinal) {
+      const trimmed = text.trim();
+      setInterim((prev) => ({ ...prev, [source]: "" }));
+      if (!trimmed) return;
+      setMessages((prev) => [
+        ...prev,
+        { id: ++messageIdRef.current, source, text: trimmed },
+      ]);
+    } else {
+      setInterim((prev) => ({ ...prev, [source]: text }));
     }
-    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange)
-    return () => navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange)
-  }, [reconnectMic])
+  }, []);
 
   const startRecording = useCallback(async () => {
-    const key = apiKey.trim()
+    const key = apiKey.trim();
     if (!key) {
-      setStatus({ text: 'Enter a Deepgram API key first', type: 'idle' })
-      return
+      setStatus({ text: "Enter a Deepgram API key first", type: "idle" });
+      return;
     }
 
-    setDesktopFinal('')
-    setDesktopInterim('')
-    setMicFinal('')
-    setMicInterim('')
+    setMessages([]);
+    setInterim({ system: "", microphone: "" });
+
+    const notetaker = NoteTaker({
+      transcription: {
+        provider: "deepgram",
+        apiKey: key,
+        options: {
+          model: "nova-3",
+          language: "multi",
+          smart_format: true,
+          interim_results: true,
+          profanity_filter: true,
+          endpointing: 300,
+        },
+      },
+      sources: ["system", "microphone"],
+      autoReconnectMic: true,
+    });
+    notetakerRef.current = notetaker;
+
+    notetaker.on("transcript", handleTranscript);
+
+    notetaker.on("status", (next) => {
+      if (next === "connecting") {
+        setStatus({ text: "Connecting…", type: "working" });
+      } else if (next === "recording") {
+        setStatus({ text: "Recording…", type: "recording" });
+      } else if (next === "stopped") {
+        setStatus({ text: "Stopped", type: "idle" });
+      }
+    });
+
+    notetaker.on("source-reconnected", ({ source }) => {
+      console.log(`[app] ${source} reconnected`);
+    });
+
+    notetaker.on("error", (err) => {
+      console.error("[app] notetaker error:", err);
+      setStatus({ text: `Error: ${err.message}`, type: "idle" });
+    });
 
     try {
-      setStatus({ text: 'Requesting system audio…', type: 'working' })
-      const { desktopStream, micStream } = await acquireStreams()
-      desktopStreamRef.current = desktopStream
-      micStreamRef.current = micStream
-
-      setStatus({ text: 'Connecting to Deepgram…', type: 'working' })
-
-      const [dgDesktop, dgMic] = await Promise.all([
-        connect(key, (text, isFinal) => {
-          if (isFinal) {
-            setDesktopInterim('')
-            setDesktopFinal(prev => {
-              if (!text.trim()) return prev
-              return prev + (prev ? ' ' : '') + text.trim()
-            })
-          } else {
-            setDesktopInterim(text)
-          }
-        }),
-        connect(key, (text, isFinal) => {
-          if (isFinal) {
-            setMicInterim('')
-            setMicFinal(prev => {
-              if (!text.trim()) return prev
-              return prev + (prev ? ' ' : '') + text.trim()
-            })
-          } else {
-            setMicInterim(text)
-          }
-        }),
-      ])
-
-      dgDesktopRef.current = dgDesktop
-      dgMicRef.current = dgMic
-
-      setStatus({ text: 'Recording…', type: 'recording' })
-
-      desktopRecRef.current = createRecorder(
-        new MediaStream(desktopStream.getAudioTracks()),
-        buf => sendAudio(dgDesktop, buf),
-      )
-      micRecRef.current = createRecorder(
-        new MediaStream(micStream.getAudioTracks()),
-        buf => sendAudio(dgMic, buf),
-      )
-
-      // Watch for mic track ending (device unplugged, Bluetooth disconnect, etc.)
-      onTrackEnded(micStream, reconnectMic)
-
-      setRecording(true)
-      recordingRef.current = true
-      startTimer()
+      await notetaker.startRecording();
+      setRecording(true);
+      startTimer();
     } catch (err) {
-      console.error('[app] start failed:', err)
-      setStatus({ text: `Error: ${err.message}`, type: 'idle' })
-      stopCapture(desktopRecRef.current, desktopStreamRef.current)
-      stopCapture(micRecRef.current, micStreamRef.current)
+      console.error("[app] start failed:", err);
+      setStatus({ text: `Error: ${err.message}`, type: "idle" });
+      notetakerRef.current = null;
     }
-  }, [apiKey, startTimer, reconnectMic])
+  }, [apiKey, handleTranscript, startTimer]);
 
-  const stopRecording = useCallback(() => {
-    stopTimer()
-    setDesktopInterim('')
-    setMicInterim('')
+  const stopRecording = useCallback(async () => {
+    stopTimer();
+    setInterim({ system: "", microphone: "" });
 
-    disconnect(dgDesktopRef.current)
-    dgDesktopRef.current = null
-    disconnect(dgMicRef.current)
-    dgMicRef.current = null
+    const notetaker = notetakerRef.current;
+    if (notetaker) {
+      try {
+        await notetaker.stopRecording();
+      } catch (err) {
+        console.error("[app] stop failed:", err);
+      }
+      notetakerRef.current = null;
+    }
 
-    stopCapture(desktopRecRef.current, desktopStreamRef.current)
-    desktopRecRef.current = desktopStreamRef.current = null
-    stopCapture(micRecRef.current, micStreamRef.current)
-    micRecRef.current = micStreamRef.current = null
-
-    setRecording(false)
-    recordingRef.current = false
-    setStatus({ text: 'Stopped', type: 'idle' })
-  }, [stopTimer])
+    setRecording(false);
+  }, [stopTimer]);
 
   const clearTranscripts = useCallback(() => {
-    setDesktopFinal('')
-    setDesktopInterim('')
-    setMicFinal('')
-    setMicInterim('')
-  }, [])
+    setMessages([]);
+    setInterim({ system: "", microphone: "" });
+  }, []);
 
   const statusColor = {
-    idle: 'text-[#555]',
-    recording: 'text-red-500',
-    working: 'text-amber-500',
-  }[status.type]
+    idle: "text-[#555]",
+    recording: "text-red-500",
+    working: "text-amber-500",
+  }[status.type];
+
+  /**
+   * Group consecutive messages from the same source so they render
+   * as a single "cluster" without repeating the source label every
+   * time — exactly how iMessage/WhatsApp groups sequential messages.
+   */
+  const clusters = useMemo(() => {
+    const out = [];
+    for (const msg of messages) {
+      const last = out[out.length - 1];
+      if (last && last.source === msg.source) {
+        last.items.push(msg);
+      } else {
+        out.push({ source: msg.source, items: [msg] });
+      }
+    }
+    return out;
+  }, [messages]);
+
+  const isEmpty =
+    messages.length === 0 && !interim.system && !interim.microphone;
 
   return (
     <div className="flex flex-col h-screen bg-[#0f0f0f] text-[#e8e8e8] overflow-hidden select-none">
       <div className="flex items-center justify-between px-[18px] pt-3.5 pb-2.5 shrink-0">
         <div
           className="text-[32px] font-extralight tracking-wider text-white"
-          style={{ fontVariantNumeric: 'tabular-nums' }}
+          style={{ fontVariantNumeric: "tabular-nums" }}
         >
           {formatTime(seconds)}
         </div>
@@ -252,17 +255,57 @@ export default function App() {
         <p className={`text-xs min-h-[16px] ${statusColor}`}>{status.text}</p>
       </div>
 
-      <div className="flex-1 flex gap-2 px-3 min-h-0 pb-1">
-        <TranscriptPanel label="System Audio" finalText={desktopFinal} interimText={desktopInterim} />
-        <TranscriptPanel label="Microphone" finalText={micFinal} interimText={micInterim} />
+      {/* Chat transcript */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-3 pb-2 min-h-0 scroll-smooth"
+      >
+        {isEmpty ? (
+          <div className="h-full flex items-center justify-center">
+            <p className="text-[#444] text-xs">
+              Press Record to start transcribing.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {clusters.map((cluster, ci) => (
+              <div key={ci} className="flex flex-col gap-1">
+                <SourceLabel source={cluster.source} />
+                {cluster.items.map((msg) => (
+                  <Bubble key={msg.id} source={msg.source} text={msg.text} />
+                ))}
+              </div>
+            ))}
+
+            {/* Trailing interim bubbles (one per source, if any) */}
+            {interim.system && (
+              <div className="flex flex-col gap-1">
+                <SourceLabel source="system" />
+                <Bubble source="system" text={interim.system} isInterim />
+              </div>
+            )}
+            {interim.microphone && (
+              <div className="flex flex-col gap-1">
+                <SourceLabel source="microphone" />
+                <Bubble
+                  source="microphone"
+                  text={interim.microphone}
+                  isInterim
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 px-[18px] py-2.5 shrink-0 no-drag">
-        <span className="text-[11px] text-[#444] whitespace-nowrap shrink-0">Deepgram key</span>
+        <span className="text-[11px] text-[#444] whitespace-nowrap shrink-0">
+          Deepgram key
+        </span>
         <input
           type="password"
           value={apiKey}
-          onChange={e => setApiKey(e.target.value)}
+          onChange={(e) => setApiKey(e.target.value)}
           placeholder="dg_…"
           spellCheck={false}
           autoComplete="off"
@@ -270,5 +313,5 @@ export default function App() {
         />
       </div>
     </div>
-  )
+  );
 }

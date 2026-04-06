@@ -10,6 +10,9 @@
     "build": "vite build && electron-builder --mac --dir",
     "build:dmg": "vite build && electron-builder --mac dmg"
   },
+  "dependencies": {
+    "notetaker-sdk": "file:../notetaker-sdk"
+  },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-react": "^6.0.1",
