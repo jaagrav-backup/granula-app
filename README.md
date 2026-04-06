@@ -7,14 +7,14 @@ stays on your machine as plain JSON you can read, edit, back up, or sync
 however you like.
 
 Built on Electron + React. Audio capture is powered by the
-[`notetaker-sdk`](https://www.npmjs.com/package/notetaker-sdk), which handles
+[`notetaker`](https://www.npmjs.com/package/notetaker), which handles
 dual-source mic + system audio recording and streams it to Deepgram for
 transcription. Gemini handles note generation.
 
 ## Features
 
 - **Dual-source live transcription.** Records mic and system audio in
-  parallel via the `notetaker-sdk` and streams them to Deepgram for real-time
+  parallel via the `notetaker` and streams them to Deepgram for real-time
   interim + final transcripts.
 - **AI meeting notes.** On stop (or on demand) the transcript is sent to
   Gemini 2.5 Flash and streamed back into the UI token-by-token. Notes are
@@ -71,5 +71,5 @@ Or edit `~/Documents/Granula/keys.json` directly.
 ## Tech stack
 
 Electron 41 · React 19 · Vite 8 · Tailwind CSS v4 · React Router ·
-shadcn-style UI primitives · Phosphor Icons · notetaker-sdk · Deepgram ·
+shadcn-style UI primitives · Phosphor Icons · notetaker · Deepgram ·
 Gemini REST streaming API.

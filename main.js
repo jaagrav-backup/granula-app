@@ -1,59 +1,70 @@
-const { app, BrowserWindow, Menu, session, ipcMain, shell } = require('electron')
-const path = require('path')
-const fs = require('fs')
-const os = require('os')
-const NoteTaker = require('notetaker-sdk/main')
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  session,
+  ipcMain,
+  shell,
+} = require("electron");
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+const NoteTaker = require("notetaker/main");
 
-const isDev = !app.isPackaged
+const isDev = !app.isPackaged;
 
 // ~/Documents/Granula — user-visible meetings + transcripts
-const GRANULA_DIR = path.join(os.homedir(), 'Documents', 'Granula')
-const MEETINGS_DIR = path.join(GRANULA_DIR, 'meetings')
+const GRANULA_DIR = path.join(os.homedir(), "Documents", "Granula");
+const MEETINGS_DIR = path.join(GRANULA_DIR, "meetings");
 // Plain JSON so the user can open/edit everything in one place. If a legacy
 // encrypted keys.enc exists from an older build we ignore it — user should
 // re-enter keys once.
-const KEYS_FILE = path.join(GRANULA_DIR, 'keys.json')
-const LEGACY_KEYS_FILE = path.join(GRANULA_DIR, 'keys.enc')
+const KEYS_FILE = path.join(GRANULA_DIR, "keys.json");
+const LEGACY_KEYS_FILE = path.join(GRANULA_DIR, "keys.enc");
 
 function ensureDirs() {
-  fs.mkdirSync(MEETINGS_DIR, { recursive: true })
+  fs.mkdirSync(MEETINGS_DIR, { recursive: true });
 }
 
 function listMeetings() {
-  ensureDirs()
-  const entries = fs.readdirSync(MEETINGS_DIR, { withFileTypes: true })
-  const out = []
+  ensureDirs();
+  const entries = fs.readdirSync(MEETINGS_DIR, { withFileTypes: true });
+  const out = [];
   for (const e of entries) {
-    if (!e.isDirectory()) continue
-    const metaPath = path.join(MEETINGS_DIR, e.name, 'meeting.json')
+    if (!e.isDirectory()) continue;
+    const metaPath = path.join(MEETINGS_DIR, e.name, "meeting.json");
     if (fs.existsSync(metaPath)) {
       try {
-        out.push(JSON.parse(fs.readFileSync(metaPath, 'utf8')))
+        out.push(JSON.parse(fs.readFileSync(metaPath, "utf8")));
       } catch (err) {
-        console.error('Failed to read meeting', e.name, err)
+        console.error("Failed to read meeting", e.name, err);
       }
     }
   }
-  return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+  return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
 function getMeeting(id) {
-  const metaPath = path.join(MEETINGS_DIR, id, 'meeting.json')
-  if (!fs.existsSync(metaPath)) return null
-  return JSON.parse(fs.readFileSync(metaPath, 'utf8'))
+  const metaPath = path.join(MEETINGS_DIR, id, "meeting.json");
+  if (!fs.existsSync(metaPath)) return null;
+  return JSON.parse(fs.readFileSync(metaPath, "utf8"));
 }
 
 function saveMeeting(meeting) {
-  ensureDirs()
-  const dir = path.join(MEETINGS_DIR, meeting.id)
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'meeting.json'), JSON.stringify(meeting, null, 2), 'utf8')
-  return meeting
+  ensureDirs();
+  const dir = path.join(MEETINGS_DIR, meeting.id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "meeting.json"),
+    JSON.stringify(meeting, null, 2),
+    "utf8",
+  );
+  return meeting;
 }
 
 function deleteMeeting(id) {
-  const dir = path.join(MEETINGS_DIR, id)
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+  const dir = path.join(MEETINGS_DIR, id);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
 }
 
 // --- Plain-JSON API key storage ---
@@ -61,156 +72,175 @@ function deleteMeeting(id) {
 // with all of their Granula data. Drop in a text editor, edit, save, done.
 function loadKeys() {
   try {
-    if (!fs.existsSync(KEYS_FILE)) return { deepgram: '', gemini: '' }
-    return JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8'))
+    if (!fs.existsSync(KEYS_FILE)) return { deepgram: "", gemini: "" };
+    return JSON.parse(fs.readFileSync(KEYS_FILE, "utf8"));
   } catch (err) {
-    console.error('loadKeys failed:', err)
-    return { deepgram: '', gemini: '' }
+    console.error("loadKeys failed:", err);
+    return { deepgram: "", gemini: "" };
   }
 }
 
 function saveKeys(keys) {
-  ensureDirs()
+  ensureDirs();
   fs.writeFileSync(
     KEYS_FILE,
-    JSON.stringify({ deepgram: '', gemini: '', ...keys }, null, 2),
-    'utf8',
-  )
+    JSON.stringify({ deepgram: "", gemini: "", ...keys }, null, 2),
+    "utf8",
+  );
   // Clean up legacy encrypted file if present — we're the source of truth now.
   if (fs.existsSync(LEGACY_KEYS_FILE)) {
-    try { fs.unlinkSync(LEGACY_KEYS_FILE) } catch (_e) {}
+    try {
+      fs.unlinkSync(LEGACY_KEYS_FILE);
+    } catch (_e) {}
   }
 }
 
 function buildAppMenu() {
-  const isMac = process.platform === 'darwin'
+  const isMac = process.platform === "darwin";
   const openFolderItem = {
-    label: 'Open Granula Folder',
-    accelerator: 'CmdOrCtrl+Shift+O',
+    label: "Open Granula Folder",
+    accelerator: "CmdOrCtrl+Shift+O",
     click: () => shell.openPath(GRANULA_DIR),
-  }
+  };
   const template = [
     ...(isMac
-      ? [{
-          label: app.name,
-          submenu: [
-            { role: 'about' },
-            { type: 'separator' },
-            openFolderItem,
-            { type: 'separator' },
-            { role: 'services' },
-            { type: 'separator' },
-            { role: 'hide' },
-            { role: 'hideOthers' },
-            { role: 'unhide' },
-            { type: 'separator' },
-            { role: 'quit' },
-          ],
-        }]
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" },
+              { type: "separator" },
+              openFolderItem,
+              { type: "separator" },
+              { role: "services" },
+              { type: "separator" },
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              { type: "separator" },
+              { role: "quit" },
+            ],
+          },
+        ]
       : []),
     {
-      label: 'File',
+      label: "File",
       submenu: [
         openFolderItem,
-        { type: 'separator' },
-        isMac ? { role: 'close' } : { role: 'quit' },
+        { type: "separator" },
+        isMac ? { role: "close" } : { role: "quit" },
       ],
     },
-    { role: 'editMenu' },
-    { role: 'viewMenu' },
-    { role: 'windowMenu' },
-  ]
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 // Debounced broadcast so one save doesn't fire ten events.
-const pendingBroadcasts = new Map() // kind -> timeout id
+const pendingBroadcasts = new Map(); // kind -> timeout id
 function broadcast(kind, extra = {}) {
-  clearTimeout(pendingBroadcasts.get(kind))
+  clearTimeout(pendingBroadcasts.get(kind));
   pendingBroadcasts.set(
     kind,
     setTimeout(() => {
-      pendingBroadcasts.delete(kind)
+      pendingBroadcasts.delete(kind);
       for (const w of BrowserWindow.getAllWindows()) {
-        w.webContents.send('granula:changed', { kind, ...extra })
+        w.webContents.send("granula:changed", { kind, ...extra });
       }
     }, 120),
-  )
+  );
 }
 
-let meetingsWatcher = null
-let keysWatcher = null
+let meetingsWatcher = null;
+let keysWatcher = null;
 function startWatchers() {
-  ensureDirs()
+  ensureDirs();
   try {
-    meetingsWatcher = fs.watch(MEETINGS_DIR, { recursive: true }, (_evt, filename) => {
-      if (!filename) return broadcast('meetings')
-      // Only care about meeting.json changes or directory add/remove.
-      if (filename.endsWith('meeting.json') || !filename.includes(path.sep + 'meeting.json') === false || !filename.includes('.')) {
-        // Extract id from first path segment
-        const id = filename.split(path.sep)[0]
-        broadcast('meetings', { id })
-      }
-    })
+    meetingsWatcher = fs.watch(
+      MEETINGS_DIR,
+      { recursive: true },
+      (_evt, filename) => {
+        if (!filename) return broadcast("meetings");
+        // Only care about meeting.json changes or directory add/remove.
+        if (
+          filename.endsWith("meeting.json") ||
+          !filename.includes(path.sep + "meeting.json") === false ||
+          !filename.includes(".")
+        ) {
+          // Extract id from first path segment
+          const id = filename.split(path.sep)[0];
+          broadcast("meetings", { id });
+        }
+      },
+    );
   } catch (err) {
-    console.warn('meetings watcher failed:', err.message)
+    console.warn("meetings watcher failed:", err.message);
   }
   try {
     keysWatcher = fs.watch(GRANULA_DIR, (_evt, filename) => {
-      if (filename === 'keys.json') broadcast('keys')
-    })
+      if (filename === "keys.json") broadcast("keys");
+    });
   } catch (err) {
-    console.warn('keys watcher failed:', err.message)
+    console.warn("keys watcher failed:", err.message);
   }
 }
 
-app.on('will-quit', () => {
-  try { meetingsWatcher?.close() } catch (_e) {}
-  try { keysWatcher?.close() } catch (_e) {}
-})
+app.on("will-quit", () => {
+  try {
+    meetingsWatcher?.close();
+  } catch (_e) {}
+  try {
+    keysWatcher?.close();
+  } catch (_e) {}
+});
 
 app.whenReady().then(() => {
-  ensureDirs()
-  buildAppMenu()
-  startWatchers()
-  NoteTaker.registerHandler(session.defaultSession)
+  ensureDirs();
+  buildAppMenu();
+  startWatchers();
+  NoteTaker.registerHandler(session.defaultSession);
 
   // IPC — meetings
-  ipcMain.handle('meetings:list', () => listMeetings())
-  ipcMain.handle('meetings:get', (_e, id) => getMeeting(id))
-  ipcMain.handle('meetings:save', (_e, meeting) => saveMeeting(meeting))
-  ipcMain.handle('meetings:delete', (_e, id) => deleteMeeting(id))
-  ipcMain.handle('meetings:openFolder', () => shell.openPath(GRANULA_DIR))
+  ipcMain.handle("meetings:list", () => listMeetings());
+  ipcMain.handle("meetings:get", (_e, id) => getMeeting(id));
+  ipcMain.handle("meetings:save", (_e, meeting) => saveMeeting(meeting));
+  ipcMain.handle("meetings:delete", (_e, id) => deleteMeeting(id));
+  ipcMain.handle("meetings:openFolder", () => shell.openPath(GRANULA_DIR));
 
   // IPC — keys
-  ipcMain.handle('keys:get', () => loadKeys())
-  ipcMain.handle('keys:set', (_e, keys) => { saveKeys(keys); return true })
+  ipcMain.handle("keys:get", () => loadKeys());
+  ipcMain.handle("keys:set", (_e, keys) => {
+    saveKeys(keys);
+    return true;
+  });
 
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 960,
     minHeight: 600,
-    title: 'Granula',
+    title: "Granula",
     // Custom title bar: hide native chrome but keep macOS traffic lights.
-    titleBarStyle: 'hiddenInset',
+    titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 16 },
-    frame: process.platform === 'darwin', // mac keeps hiddenInset; win/linux fully frameless
-    backgroundColor: '#0f0f0f',
+    frame: process.platform === "darwin", // mac keeps hiddenInset; win/linux fully frameless
+    backgroundColor: "#0f0f0f",
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
-  })
+  });
 
   if (isDev) {
-    win.loadURL('http://localhost:5173')
+    win.loadURL("http://localhost:5173");
   } else {
-    win.loadFile(path.join(__dirname, 'dist-renderer', 'index.html'))
+    win.loadFile(path.join(__dirname, "dist-renderer", "index.html"));
   }
-})
+});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
